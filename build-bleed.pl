@@ -25,6 +25,7 @@ for my $thread (qw/0 1/) {
       '-Aldflags="-Wl,-z,now -Wl,-zrelro -Wl,-z,noexecstack"',
       '-Duseshrplib',
       '-Dusemymalloc=y',
+      '-Uversiononly',
       ($thread ? '-Dusethreads' : ()),
     ],
     test => 1,
