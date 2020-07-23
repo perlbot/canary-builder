@@ -9,11 +9,11 @@ use Path::Tiny;
 
 my $randid = join('', map {chr(65+rand()*26)} 1..5);
 my $baseid = sprintf "blead-%s-%s", Time::Moment->now->strftime("%Y-%m-%d"), $randid;
+#my $baseid = "5.30.1";
 
 for my $thread (qw/0 1/) {
   # TODO timeout
   my $dst = path( '/home/perlbot/perl5/custom/'. $baseid . ($thread ? '-threads' : '') );
-
 
   Perl::Build->install(
     src_path => '/home/perlbot/build/perl5',
@@ -29,7 +29,8 @@ for my $thread (qw/0 1/) {
       ($thread ? '-Dusethreads' : ()),
     ],
     test => 1,
-    jons => 4
+    jobs => 4
+    
   );
 
   $dst->child('.tested')->touch();

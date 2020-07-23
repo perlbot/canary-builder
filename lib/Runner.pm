@@ -6,6 +6,7 @@ use IPC::Run qw/start pump finish timeout/;
 use Time::HiRes qw/usleep utime time/;
 use Syntax::Keyword::Try;
 
+# quick and dirty readline like thing from a string buffer.  give the first full line preset and rewrite the buffer
 sub _get_line {
   my $line;
   ($line, $_[0]) = $_[0] =~ /\A([^\n]*\n)?(.*?)\Z/sm;
