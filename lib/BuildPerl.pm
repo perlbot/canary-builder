@@ -13,6 +13,7 @@ use Time::Moment;
 use Future;
 use Future::AsyncAwait;
 use Syntax::Keyword::Try;
+use Data::Dumper;
 
 # TODO config?
 my $basepath = path('/home/perlbot/perl5/custom/');
@@ -46,7 +47,7 @@ fun build_perl($loop, %args) {
             ($threads ? '-Dusethreads' : ()),
           ],
           test => 1,
-          jobs => 1
+          jobs => 4
         );
 
         $dst->child('.tested')->touch();
@@ -77,9 +78,30 @@ fun checkout_git($refid) {
   $git->checkout($refid);
 }
 
+# TODO move these two functions to a library
+fun get_baseid($time, $branch, $randid) {
+    return sprintf "%s-%s-%s", $branch, $time, $randid;
+}
+
+fun get_perl_bin($time, $branch, $randid, $opts) {
+  my $baseid = get_baseid($time, $branch, $randid);
+
+  for my $k (qw(threads quadmath)) {
+    next if !defined $opts->{$k} || !$opts->{$k};
+    $baseid .= "-$k";
+  }
+
+  return $baseid
+}
+
 fun build_perls($loop, %args) {
-  my $randid = join('', map {chr(65+rand()*26)} 1..5);
-  my $baseid = sprintf "blead-%s-%s", Time::Moment->now->strftime("%Y-%m-%d"), $randid;
+  my $time = $args{datetime} // Time::Moment->now()->strftime("%Y-%m-%d");
+  my $randid = $args{randid} // join('', map {chr(65+rand()*26)} 1..5);
+  my $branch = $args{branch} // "blead";
+
+  print Dumper(\%args, $time, $randid, $branch);
+
+  my $baseid = get_baseid($time, $branch, $randid);
 
   my $starting_fut = $loop->new_future;
 
@@ -94,11 +116,21 @@ fun build_perls($loop, %args) {
 
     my $next_fut = $seq_fut->followed_by(sub {
         clean_git();
-        my $fut = build_perl($loop, baseid => $baseid, randid => $randid, %$opts);
+        checkout_git($branch);
+        my $fut;
+        print "Building?\n";
+        unless ($args{skip_build}) {
+          $fut = build_perl($loop, baseid => $baseid, randid => $randid, %$opts);
+        } else {
+          $fut = Future->done();
+        }
+
+        my $perlbin = get_perl_bin($time, $branch, $randid, $opts);
 
         # TODO trigger cpan and fuzz testing here
         $fut->on_ready(async sub {
             try {
+              print "INSIDE CPANM! $perlbin\n";
             } catch {
             } finally {
               $real_fut->done(@_); # TODO real data here
