@@ -15,17 +15,7 @@ use Future::AsyncAwait;
 use Syntax::Keyword::Try;
 use Data::Dumper;
 use Logger;
-
-fun async_func_run($loop, $code, @args) {
-  my $function = IO::Async::Function->new(
-    code => $code,
-  );
-
-  $loop->add($function);
-
-
-  return $function->call(args => \@args);
-}
+use InstallModules;
 
 fun build_perl($loop, $perlid, %args) {
   my ($randid, $baseid, $threads, $basepath, $srcpath) = @args{qw/randid baseid threads basepath srcpath/};
@@ -119,10 +109,11 @@ fun get_perl_id($time, $branch, $randid, $opts) {
 }
 
 fun build_perls($loop, %args) {
-  my $time = $args{datetime} // Time::Moment->now()->strftime("%Y-%m-%d");
+  my $time = $args{time} // Time::Moment->now()->strftime("%Y-%m-%d");
   my $randid = $args{randid} // join('', map {chr(65+rand()*26)} 1..5);
   my $branch = $args{branch} // "blead";
   my $srcpath = $args{srcpath} or die "Need srcpath";
+  my $basepath = $args{basepath} or die "Need basepath";
 
   my $baseid = get_baseid($time, $branch, $randid);
 
@@ -157,10 +148,12 @@ fun build_perls($loop, %args) {
         }
 
         # TODO trigger cpan and fuzz testing here
-        $fut->on_ready(async sub {
+        $fut->on_ready(sub {
             try {
-              print "INSIDE CPANM! $perlid\n";
+              my $fut = InstallModules::install_modules($loop, $perlid, $basepath);
+              $fut->get();
             } catch {
+              $logger->error("cpanmsetup", $perlid, {line=>"Failed to cpanm: $@"})
             } finally {
               $real_fut->done(@_); # TODO real data here
             }

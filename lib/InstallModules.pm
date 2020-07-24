@@ -18,9 +18,19 @@ async sub resolve_deps {
 }
 
 async sub install_cpanm {
-  my ($loop, $perl_path) = @_;
-  my $function = IO::Async::Function->
-  return Future->new()->done("foo");
+  my ($loop, $base_path, $perl_id) = @_;
+
+  return async_func_run($loop, sub{
+    try {
+    my $perl_bin = $base_path->child($perl_id)->child("bin");
+    my ($perl_exe) = $perl_bin->children(qr/^perl5/);
+
+    system("/bin/sh", "-c", 'curl -L https://cpanmin.us | '.$perl_exe.' - App::cpanminus');
+
+    } catch {print "WAT $@";}
+
+
+  });
 }
 
 async sub read_cpanfile {
@@ -56,11 +66,13 @@ async sub make_dep_list {
 }
 
 async sub install_modules {
-  my ($loop, $perlid, $baseid) = @_;
+  my ($loop, $perlid, $base_path) = @_;
+  print "installing modules\n";
+  return install_cpanm($loop, $base_path, $perlid);
 
-  my $deplist = await read_cpanfile($loop, $cpanfile, $perl_path, $baseid);
+#  my $deplist = await read_cpanfile($loop, $cpanfile, $perl_path, $baseid);
   # TODO log deplist
-  my $results = await install_modules($loop, $perl_path, $deplist);
+#  my $results = await install_modules($loop, $perl_path, $deplist);
 }
 
 # TODO uniq

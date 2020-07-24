@@ -5,6 +5,22 @@ use warnings;
 use IPC::Run qw/start pump finish timeout/;
 use Time::HiRes qw/usleep utime time/;
 use Syntax::Keyword::Try;
+use parent 'Exporter';
+use IO::Async::Function;
+
+our @EXPORT = qw/async_func_run/;
+
+sub async_func_run {
+  my ($loop, $code, @args) = @_;
+  my $function = IO::Async::Function->new(
+    code => $code,
+  );
+
+  $loop->add($function);
+
+
+  return $function->call(args => \@args);
+}
 
 # quick and dirty readline like thing from a string buffer.  give the first full line preset and rewrite the buffer
 sub _get_line {
