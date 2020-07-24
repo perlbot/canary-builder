@@ -27,7 +27,7 @@ fun async_func_run($loop, $code, @args) {
 }
 
 fun build_perl($loop, $perlid, %args) {
-  my ($randid, $baseid, $threads) = @args{qw/randid baseid threads/};
+  my ($randid, $baseid, $threads, $basepath, $srcpath) = @args{qw/randid baseid threads basepath srcpath/};
 
   async_func_run($loop, sub {
       # max an hour
@@ -58,7 +58,8 @@ fun build_perl($loop, $perlid, %args) {
   });
 }
 
-fun clean_git($loop, $perlid, $srcpath) {
+async sub clean_git {
+  my ($loop, $perlid, $srcpath) = @_;
   my $git = Git::Wrapper->new({dir => $srcpath});
 
   $git->clean({f => 1, d => 1});
@@ -78,7 +79,8 @@ fun clean_git($loop, $perlid, $srcpath) {
   });
 }
 
-fun checkout_git($perlid, $refid) {
+async sub checkout_git {
+  my ($loop, $perlid, $refid, $srcpath) = @_;
   my $git = Git::Wrapper->new({dir => $srcpath});
 
   $git->checkout($refid);
@@ -92,7 +94,7 @@ fun get_baseid($time, $branch, $randid) {
     return sprintf "%s-%s-%s", $branch, $time, $randid;
 }
 
-fun get_perl_bin($time, $branch, $randid, $opts) {
+fun get_perl_id($time, $branch, $randid, $opts) {
   my $baseid = get_baseid($time, $branch, $randid);
 
   for my $k (qw(threads quadmath)) {
@@ -107,6 +109,7 @@ fun build_perls($loop, %args) {
   my $time = $args{datetime} // Time::Moment->now()->strftime("%Y-%m-%d");
   my $randid = $args{randid} // join('', map {chr(65+rand()*26)} 1..5);
   my $branch = $args{branch} // "blead";
+  my $srcpath = $args{srcpath} or die "Need srcpath";
 
   print Dumper(\%args, $time, $randid, $branch);
 
@@ -120,6 +123,7 @@ fun build_perls($loop, %args) {
 
   for my $opts ({threads => 0}, {threads => 1}) { # TODO more permutations?
     # pre-create a new future for us to mark as done when we finish
+    my $perlid = get_perl_id($time, $branch, $randid, $opts);
     my $real_fut = $loop->new_future;
     push @final_futures, $real_fut;
 
@@ -134,12 +138,10 @@ fun build_perls($loop, %args) {
           $fut = Future->done();
         }
 
-        my $perlbin = get_perl_bin($time, $branch, $randid, $opts);
-
         # TODO trigger cpan and fuzz testing here
         $fut->on_ready(async sub {
             try {
-              print "INSIDE CPANM! $perlbin\n";
+              print "INSIDE CPANM! $perlid\n";
             } catch {
             } finally {
               $real_fut->done(@_); # TODO real data here
