@@ -23,6 +23,7 @@ fun async_func_run($loop, $code, @args) {
 
   $loop->add($function);
 
+
   return $function->call(args => \@args);
 }
 
@@ -58,17 +59,23 @@ fun build_perl($loop, $perlid, %args) {
   });
 }
 
-async sub clean_git {
+sub clean_git {
   my ($loop, $perlid, $srcpath) = @_;
   my $git = Git::Wrapper->new({dir => $srcpath});
 
-  $git->clean({f => 1, d => 1});
+  $logger->debug("gitclean", $perlid, {line => "Cleaning git..."});
 
-  $logger->debug("gitclean", $perlid, {line => $git->output, time => time(), channel => "stdout"});
-  $logger->error("gitclean", $perlid, {line => $git->error, time => time(), channel => "stderr"});
-  $logger->debug("gitclean", $perlid, {line => $git->status, time => time(), channel => "cmdstatus"});
+  try {
+    $git->clean({f => 1, d => 1});
+  } catch {
+    $logger->debug("gitclean", $perlid, {line => $@->output, time => time(), channel => "stdout"});
+    $logger->error("gitclean", $perlid, {line => $@->error, time => time(), channel => "stderr"});
+    $logger->debug("gitclean", $perlid, {line => $@->status, time => time(), channel => "cmdstatus"});
 
-  async_func_run($loop, sub {
+    die "Failed to git";
+  }
+
+  my $async_fut = async_func_run($loop, sub {
     Runner::run_code(
       code => sub {chdir $srcpath; system("make clean");}, 
       timeout => 240, 
@@ -77,16 +84,22 @@ async sub clean_git {
       logger => sub {$logger->debug("makeclean", $perlid, @_)}
     );
   });
+
+  return $async_fut->get();
 }
 
-async sub checkout_git {
-  my ($loop, $perlid, $refid, $srcpath) = @_;
+sub checkout_git {
+  my ($loop, $perlid, $srcpath, $refid) = @_;
   my $git = Git::Wrapper->new({dir => $srcpath});
 
-  $git->checkout($refid);
-  $logger->debug("gitcheckout", $perlid, {line => $git->output, time => time(), channel => "stdout"});
-  $logger->error("gitcheckout", $perlid, {line => $git->error, time => time(), channel => "stderr"});
-  $logger->debug("gitcheckout", $perlid, {line => $git->status, time => time(), channel => "cmdstatus"});
+  try {
+    $git->checkout($refid);
+  } catch {
+    $logger->debug("gitcheckout", $perlid, {line => $git->output, time => time(), channel => "stdout"});
+    $logger->error("gitcheckout", $perlid, {line => $git->error, time => time(), channel => "stderr"});
+    $logger->debug("gitcheckout", $perlid, {line => $git->status, time => time(), channel => "cmdstatus"});
+    die "Failed to git"
+  }
 }
 
 # TODO move these two functions to a library
@@ -111,13 +124,13 @@ fun build_perls($loop, %args) {
   my $branch = $args{branch} // "blead";
   my $srcpath = $args{srcpath} or die "Need srcpath";
 
-  print Dumper(\%args, $time, $randid, $branch);
-
   my $baseid = get_baseid($time, $branch, $randid);
 
   my $starting_fut = $loop->new_future;
 
   my $seq_fut = $starting_fut;
+
+  $logger->debug("prepare", $baseid, {line => "PREPARED ".Dumper([\%args, $time, $randid, $branch])});
 
   my @final_futures = ();
 
@@ -126,12 +139,17 @@ fun build_perls($loop, %args) {
     my $perlid = get_perl_id($time, $branch, $randid, $opts);
     my $real_fut = $loop->new_future;
     push @final_futures, $real_fut;
+    $logger->debug("prepare", $perlid, {line => "Setting opts ".Dumper($opts)});
 
     my $next_fut = $seq_fut->followed_by(async sub {
-        await clean_git($loop, $logger, $srcpath);
-        await checkout_git($loop, $logger, $srcpath, $branch);
+        try {
+          clean_git($loop, $perlid, $srcpath); 
+        } catch {
+          print "FAILED! $@";
+        }
+        checkout_git($loop, $perlid, $srcpath, $branch);
         my $fut;
-        $logger->debug("prebuild", $perlid, {line => "checking skip_build"});
+        $logger->debug("prebuild", $perlid, {line => "checking skip_build ".$args{skip_build}});
         unless ($args{skip_build}) {
           $fut = build_perl($loop, baseid => $baseid, randid => $randid, %$opts);
         } else {
@@ -152,6 +170,8 @@ fun build_perls($loop, %args) {
 
     $seq_fut = $next_fut;
   }
+
+  $logger->debug("prepare", $baseid, {line => "Futures setup, kick off"});
 
   $starting_fut->done(); # kick it off
   push @final_futures, $seq_fut; # keep from orphaning the final sequence future.

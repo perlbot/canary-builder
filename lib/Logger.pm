@@ -1,7 +1,7 @@
 package Logger;
 use strict;
 use warnings;
-use Function::Parameters;
+use Data::Dumper;
 
 use parent 'Exporter';
 our @EXPORT=qw/$logger init_logger/;
@@ -14,14 +14,14 @@ sub init_logger {
   return $logger;
 }
 
-BEGIN {
-  for my $level (qw/info debug error warn fatal/) {
-    eval q<sub >.$level.q< {
-      my ($id, $phase, $data) = @_;
-      printf("%s: %s (%s): %s\n", ">.$level.q[", uc($phase), $id, $data->{line});
-    }];
-  }
+sub _log {
+  my ($self, $level, $phase, $id, $data) = @_;
+  printf("%s: %s (%s): %s\n", $level, uc($phase), $id, $data->{line});
 }
-
+sub info {my $self = shift; $self->_log("INFO", @_)}
+sub warn {my $self = shift; $self->_log("WARN", @_)}
+sub debug {my $self = shift; $self->_log("DEBUG", @_)}
+sub fatal {my $self = shift; $self->_log("FATAL", @_)}
+sub error {my $self = shift; $self->_log("ERROR", @_)}
 
 1;
