@@ -14,21 +14,22 @@ use Future;
 use Future::AsyncAwait;
 use Syntax::Keyword::Try;
 use Data::Dumper;
+use Logger;
 
-# TODO config?
-my $basepath = path('/home/perlbot/perl5/custom/');
-my $srcpath = path('/home/perlbot/build/perl5');
+fun async_func_run($loop, $code, @args) {
+  my $function = IO::Async::Function->new(
+    code => $code,
+  );
 
-fun build_perl($loop, %args) {
+  $loop->add($function);
+
+  return $function->call(args => \@args);
+}
+
+fun build_perl($loop, $perlid, %args) {
   my ($randid, $baseid, $threads) = @args{qw/randid baseid threads/};
 
-  my $function = IO::Async::Function->new(
-    code => sub {
-      my $logger = fun($data) {
-        chomp($data->{line});
-        printf("BUILD (%s-%s): %s\n", $baseid, $threads ? 'threaded' : 'unthreaded', $data->{line}); # TODO better logging
-      };
-
+  async_func_run($loop, sub {
       # max an hour
       my $ret_data = Runner::run_code(code => sub {
         my $dst = $basepath->child($baseid . ($threads ? '-threads' : '') );
@@ -51,31 +52,39 @@ fun build_perl($loop, %args) {
         );
 
         $dst->child('.tested')->touch();
-      }, logger => $logger, timeout => 60*60, cgroup => "canary-$baseid".($threads?"-threads":""), stdin => "");
+      }, logger => sub {$logger->debug("BUILD", $perlid, @_)}, timeout => 60*60, cgroup => "canary-$perlid", stdin => "");
 
       return $ret_data;
-    },
-  );
-
-  $loop->add($function); # TODO make this take args and be shared/common among all runs instead of this currying stuff?
-
-  # TODO make this take args properly
-  my $future = $function->call(args => []);
-
-  return $future;
+  });
 }
 
-fun clean_git() {
+fun clean_git($loop, $perlid, $srcpath) {
   my $git = Git::Wrapper->new({dir => $srcpath});
 
   $git->clean({f => 1, d => 1});
-  Runner::run_code(code => sub {chdir $srcpath; system("make clean");}, timeout => 240, cgroup => "make-clean-...", stdin => "");
+
+  $logger->debug("gitclean", $perlid, {line => $git->output, time => time(), channel => "stdout"});
+  $logger->error("gitclean", $perlid, {line => $git->error, time => time(), channel => "stderr"});
+  $logger->debug("gitclean", $perlid, {line => $git->status, time => time(), channel => "cmdstatus"});
+
+  async_func_run($loop, sub {
+    Runner::run_code(
+      code => sub {chdir $srcpath; system("make clean");}, 
+      timeout => 240, 
+      cgroup => "make-clean-$perlid", 
+      stdin => "", 
+      logger => sub {$logger->debug("makeclean", $perlid, @_)}
+    );
+  });
 }
 
-fun checkout_git($refid) {
+fun checkout_git($perlid, $refid) {
   my $git = Git::Wrapper->new({dir => $srcpath});
 
   $git->checkout($refid);
+  $logger->debug("gitcheckout", $perlid, {line => $git->output, time => time(), channel => "stdout"});
+  $logger->error("gitcheckout", $perlid, {line => $git->error, time => time(), channel => "stderr"});
+  $logger->debug("gitcheckout", $perlid, {line => $git->status, time => time(), channel => "cmdstatus"});
 }
 
 # TODO move these two functions to a library
@@ -114,11 +123,11 @@ fun build_perls($loop, %args) {
     my $real_fut = $loop->new_future;
     push @final_futures, $real_fut;
 
-    my $next_fut = $seq_fut->followed_by(sub {
-        clean_git();
-        checkout_git($branch);
+    my $next_fut = $seq_fut->followed_by(async sub {
+        await clean_git($loop, $logger, $srcpath);
+        await checkout_git($loop, $logger, $srcpath, $branch);
         my $fut;
-        print "Building?\n";
+        $logger->debug("prebuild", $perlid, {line => "checking skip_build"});
         unless ($args{skip_build}) {
           $fut = build_perl($loop, baseid => $baseid, randid => $randid, %$opts);
         } else {

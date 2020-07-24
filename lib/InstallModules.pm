@@ -13,18 +13,18 @@ use List::Util qw/uniq/;
 use Syntax::Keyword::Try;
 
 async sub resolve_deps {
-  my ($loop, $module, $perl_path, $cpanm_path) = @_;
+  my ($loop, $logger, $module, $perl_path, $cpanm_path) = @_;
 
 }
 
 async sub install_cpanm {
-  my ($loop, $perl_path) = @_;
-  # TODO
+  my ($loop, $logger, $perl_path) = @_;
+  my $function = IO::Async::Function->
   return Future->new()->done("foo");
 }
 
 async sub read_cpanfile {
-  my ($loop, $cpanfile, $perl_path, $base_id) = @_;
+  my ($loop, $logger, $cpanfile, $perl_path, $base_id) = @_;
   my $file = Module::CPANfile->load($cpanfile);
   my $prereqs = $file->prereqs;
 
@@ -50,12 +50,18 @@ async sub read_cpanfile {
   }
 }
 
-sub make_dep_list {
-  my ($loop, @mod_list) = @_;
+async sub make_dep_list {
+  my ($loop, $logger, @mod_list) = @_;
 
 }
 
+async sub install_modules {
+  my ($loop, $logger, $perlid, $baseid) = @_;
 
+  my $deplist = await read_cpanfile($loop, $cpanfile, $perl_path, $baseid);
+  # TODO log deplist
+  my $results = await install_modules($loop, $perl_path, $deplist);
+}
 
 # TODO uniq
 
