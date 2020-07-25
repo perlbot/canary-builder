@@ -150,8 +150,10 @@ fun build_perls($loop, %args) {
         # TODO trigger cpan and fuzz testing here
         $fut->on_ready(sub {
             try {
-              my $fut = InstallModules::install_modules($loop, $perlid, $basepath);
-              $fut->get();
+              print "START\n";
+              my $fut2 = InstallModules::install_modules($loop, $perlid, $basepath);
+              $fut2->get();
+              print "END\n";
             } catch {
               $logger->error("cpanmsetup", $perlid, {line=>"Failed to cpanm: $@"})
             } finally {

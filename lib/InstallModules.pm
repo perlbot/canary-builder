@@ -11,25 +11,28 @@ use Runner;
 use Module::CPANfile;
 use List::Util qw/uniq/;
 use Syntax::Keyword::Try;
+use Data::Dumper;
 
 async sub resolve_deps {
-  my ($loop, $module, $perl_path, $cpanm_path) = @_;
+  my ($loop, $module, $perlid, $base_path) = @_;
 
+  return await async_func_run($loop, sub {
+    my $perl_bin = $base_path->child($perlid)->child("bin");
+    my ($cpanm) = $perl_bin->children(qr/^cpanm$/);
+
+    open(my $fh, "-|", $cpanm, "--quiet","--showdeps", $module);
+    return [map {chomp; $_} <$fh>];
+  });
 }
 
 async sub install_cpanm {
   my ($loop, $base_path, $perl_id) = @_;
 
-  return async_func_run($loop, sub{
-    try {
+  return await async_func_run($loop, sub{
     my $perl_bin = $base_path->child($perl_id)->child("bin");
     my ($perl_exe) = $perl_bin->children(qr/^perl5/);
 
     system("/bin/sh", "-c", 'curl -L https://cpanmin.us | '.$perl_exe.' - App::cpanminus');
-
-    } catch {print "WAT $@";}
-
-
   });
 }
 
@@ -68,7 +71,10 @@ async sub make_dep_list {
 async sub install_modules {
   my ($loop, $perlid, $base_path) = @_;
   print "installing modules\n";
-  return install_cpanm($loop, $base_path, $perlid);
+  await install_cpanm($loop, $base_path, $perlid);
+
+  my $wat = await resolve_deps($loop, "App::cpanminus", $perlid, $base_path);
+  print Dumper($wat);
 
 #  my $deplist = await read_cpanfile($loop, $cpanfile, $perl_path, $baseid);
   # TODO log deplist
