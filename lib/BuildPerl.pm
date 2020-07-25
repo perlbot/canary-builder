@@ -1,5 +1,7 @@
 package BuildPerl;
 
+use v5.24;
+
 use strict;
 use warnings;
 
@@ -16,6 +18,7 @@ use Syntax::Keyword::Try;
 use Data::Dumper;
 use Logger;
 use InstallModules;
+use Capture::Tiny qw/capture/;
 
 fun build_perl($loop, $perlid, %args) {
   my ($randid, $baseid, $threads, $basepath, $srcpath) = @args{qw/randid baseid threads basepath srcpath/};
@@ -23,6 +26,8 @@ fun build_perl($loop, $perlid, %args) {
   state $function = do {
     my $func = IO::Async::Function->new(
       code => sub {
+        my ($perlid, $args) = @_;
+        my ($randid, $baseid, $threads, $basepath, $srcpath) = $args->@{qw/randid baseid threads basepath srcpath/};
       # max an hour
       my $ret_data = Runner::run_code(code => sub {
         my $dst = $basepath->child($baseid . ($threads ? '-threads' : '') );
@@ -55,7 +60,7 @@ fun build_perl($loop, $perlid, %args) {
     $func;
   };
 
-  return $function->call(args => [])->get();
+  return $function->call(args => [$perlid, \%args])->get();
 }
 
 sub clean_git {
@@ -74,12 +79,18 @@ sub clean_git {
     die "Failed to git";
   }
 
-
   state $function = do {
     my $func = IO::Async::Function->new(
       code => sub {
+        my ($perlid, $srcpath) = @_;
         Runner::run_code(
-          code => sub {chdir $srcpath; my $output = capture {system("make clean");}; $logger->debug("makeclean", $perlid, "output: $output")}, 
+          code => sub {
+            chdir $srcpath;
+            my $output = capture {
+              system("make clean");
+            }; 
+            $logger->debug("makeclean", $perlid, {line => "output: $output"});
+            }, 
           timeout => 240, 
           cgroup => "make-clean-$perlid",
           stdin => "", 
@@ -92,7 +103,7 @@ sub clean_git {
     $func;
   };
 
-  return $function->call(args => [])->get();
+  return $function->call(args => [$perlid, $srcpath])->get();
 }
 
 sub checkout_git {
