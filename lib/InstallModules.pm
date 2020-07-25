@@ -16,8 +16,12 @@ use Syntax::Keyword::Try;
 use Data::Dumper;
 use Logger;
 use Capture::Tiny qw/capture/;
+use Module::CoreList;
 
 our %depcache;
+our %modstatus;
+
+our @blacklisted_modules = qw/perl File::Spec Encode/; # modules to just plain ignore when doing dep resolution
 
 async sub resolve_deps {
   my ($loop, $module, $perlid, $base_path) = @_;
@@ -82,7 +86,7 @@ async sub install_cpanm {
   return $function->call(args => [])->get();
 }
 
-async sub install_module {
+sub install_module {
   my ($loop, $module, $perlid, $base_path) = @_;
 
     state $function = do {
@@ -110,7 +114,9 @@ async sub install_module {
 
   $logger->info("cpanm_install_module", $perlid, {line => "Installing $module"});
 
-  return $function->call(args => [$module, $perlid, $base_path])->get();
+  my $future = $function->call(args => [$module, $perlid, $base_path]);
+  $modstatus{$perlid}{$module} = $future;
+  return $future;
 }
 
 async sub read_cpanfile {
@@ -134,21 +140,46 @@ async sub read_cpanfile {
   my @queue = @requires;
   my %checked_req;
 
-  while (my $req = shift @queue) {
-    $logger->info("cpanfile", $perlid, {line => "Fetching meta about $req"});
-    next if ($checked_req{$req});
-    my $deps = await resolve_deps($loop, $req, $perlid, $base_path);
-    $checked_req{$req} = 1;
-    push @realreqs, $deps->@*;
-    push @queue, $deps->@*;
-  }
+#  while (my $req = shift @queue) {
+#    $logger->info("cpanfile", $perlid, {line => "Fetching meta about $req"});
+#    next if ($checked_req{$req});
+#    my $deps = await resolve_deps($loop, $req, $perlid, $base_path);
+#    $checked_req{$req} = 1;
+#    push @realreqs, $deps->@*;
+#    push @queue, $deps->@*;
+#  }
 
-  return [uniq @realreqs];
+  return {requires => [uniq @requires], recommends => [uniq @recommends]};
 }
 
-async sub make_dep_list {
-  my ($loop, @mod_list) = @_;
+async sub install_module_internal {
+  my ($loop, $perlid, $base_path, $module) = @_;
+  $logger->info("cpanm_full_install", $perlid, {line => "Install deps for $module"});
+  #$logger->info("cpanm_full_install", $perlid, {line => "Status [".0+exists($modstatus{$perlid}{$module})."]->[".(grep {$_ eq $module} @blacklisted_modules)."]"});
+  return Future->done() if ((grep {$_ eq $module} @blacklisted_modules) || (Module::CoreList::is_core($module))); # don't do anything for a blacklisted module
+  return $modstatus{$perlid}{$module} if (exists $modstatus{$perlid}{$module});
 
+  unless (exists $depcache{$module}) {
+    $depcache{$module} = await resolve_deps($loop, $module, $perlid, $base_path);
+  }
+
+  my @dep_futures = map {install_module_internal($loop, $perlid, $base_path, $_)} $depcache{$module}->@*;
+  return Future->wait_all(@dep_futures)->then(sub {
+    $logger->info("cpanm_full_install", $perlid, {line => "Installing $module"});
+    return install_module($loop, $module, $perlid, $base_path)->get();
+  });
+}
+
+async sub do_install {
+  my ($loop, $perlid, $base_path, $deplist) = @_;
+
+  print Dumper($deplist);
+
+  for my $dep ( $deplist->@*) {
+    await install_module_internal($loop, $perlid, $base_path, $dep)
+  }
+  print "WAT?\n";
+  return 1;
 }
 
 async sub install_modules {
@@ -157,12 +188,16 @@ async sub install_modules {
   await install_cpanm($loop, $base_path, $perlid);
 
   # Install a few random modules needed for the rest to be smooth
+
+  await do_install($loop, $perlid, $base_path, [qw/Module::Build ExtUtils::MakeMaker Module::Install/]);
   await install_module($loop, "Module::Build", $perlid, $base_path);
   await install_module($loop, "Module::Install", $perlid, $base_path);
   await install_module($loop, "ExtUtils::MakeMaker", $perlid, $base_path);
 
   my $deplist = await read_cpanfile($loop, "/home/perlbot/perlbuut/cpanfile", $perlid, $base_path);
-  print Dumper($deplist);
+  #print Dumper($deplist);
+
+  await do_install($loop, $perlid, $base_path, $deplist->{requires});
   # TODO log deplist
 #  my $results = await install_modules($loop, $perl_path, $deplist);
 }
