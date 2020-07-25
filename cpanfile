@@ -5,3 +5,4 @@ requires 'IO::Async::Loop';
 requires 'IPC::Run';
 requires 'IO::Async::Process';
 requires 'Git::Wrapper';
+requires 'Capture::Tiny';
