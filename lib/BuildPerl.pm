@@ -20,7 +20,9 @@ use InstallModules;
 fun build_perl($loop, $perlid, %args) {
   my ($randid, $baseid, $threads, $basepath, $srcpath) = @args{qw/randid baseid threads basepath srcpath/};
 
-  async_func_run($loop, sub {
+  state $function = do {
+    my $func = IO::Async::Function->new(
+      code => sub {
       # max an hour
       my $ret_data = Runner::run_code(code => sub {
         my $dst = $basepath->child($baseid . ($threads ? '-threads' : '') );
@@ -46,7 +48,14 @@ fun build_perl($loop, $perlid, %args) {
       }, logger => sub {$logger->debug("BUILD", $perlid, @_)}, timeout => 60*60, cgroup => "canary-$perlid", stdin => "");
 
       return $ret_data;
-  });
+    });
+
+    $loop->add($func);
+
+    $func;
+  };
+
+  return $function->call(args => [])->get();
 }
 
 sub clean_git {
@@ -65,17 +74,25 @@ sub clean_git {
     die "Failed to git";
   }
 
-  my $async_fut = async_func_run($loop, sub {
-    Runner::run_code(
-      code => sub {chdir $srcpath; system("make clean");}, 
-      timeout => 240, 
-      cgroup => "make-clean-$perlid", 
-      stdin => "", 
-      logger => sub {$logger->debug("makeclean", $perlid, @_)}
-    );
-  });
 
-  return $async_fut->get();
+  state $function = do {
+    my $func = IO::Async::Function->new(
+      code => sub {
+        Runner::run_code(
+          code => sub {chdir $srcpath; my $output = capture {system("make clean");}; $logger->debug("makeclean", $perlid, "output: $output")}, 
+          timeout => 240, 
+          cgroup => "make-clean-$perlid",
+          stdin => "", 
+          logger => sub {$logger->debug("makeclean", $perlid, @_)}
+        );
+    });
+
+    $loop->add($func);
+
+    $func;
+  };
+
+  return $function->call(args => [])->get();
 }
 
 sub checkout_git {

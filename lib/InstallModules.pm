@@ -1,5 +1,7 @@
 package InstallModules;
 
+use v5.24;
+
 use strict;
 use warnings;
 
@@ -20,43 +22,62 @@ our %depcache;
 async sub resolve_deps {
   my ($loop, $module, $perlid, $base_path) = @_;
 
+  state $function = do {
+    my $func = IO::Async::Function->new(
+      code => sub {
+      my $perl_bin = $base_path->child($perlid)->child("bin");
+      my ($cpanm) = $perl_bin->children(qr/^cpanm$/);
+
+      my $output = capture {
+        system($cpanm, "--quiet","--showdeps", $module);
+      };
+
+      my $deps = [split(/\n/, $output)];
+      $logger->debug("cpanm_resolve_deps", $perlid, {line => "Found deps ($?): ".Dumper($deps)});
+      $depcache{$module} = $deps;
+      return $deps;
+    });
+
+    $loop->add($func);
+
+    $func;
+  };
+
   $logger->info("cpanm_resolve_deps", $perlid, {line => "Finding deps for $module"});
 
   if (exists $depcache{$module}) {
     return $depcache{$module};
   }
 
-  return await async_func_run($loop, sub {
-    my $perl_bin = $base_path->child($perlid)->child("bin");
-    my ($cpanm) = $perl_bin->children(qr/^cpanm$/);
-
-    my $output = capture {
-      system($cpanm, "--quiet","--showdeps", $module);
-    };
-
-    my $deps = [split(/\n/, $output)];
-    $logger->debug("cpanm_resolve_deps", $perlid, {line => "Found deps ($?): ".Dumper($deps)});
-    $depcache{$module} = $deps;
-    return $deps;
-  });
+  return $function->call(args => [])->get();
 }
 
 async sub install_cpanm {
   my ($loop, $base_path, $perlid) = @_;
 
+  state $function = do {
+    my $func = IO::Async::Function->new(
+      code => sub {
+      my $perl_bin = $base_path->child($perlid)->child("bin");
+      my ($perl_exe) = $perl_bin->children(qr/^perl5/);
+
+      my $output = capture {
+        system("/bin/sh", "-c", 'curl -L https://cpanmin.us | '.$perl_exe.' - App::cpanminus');
+      };
+      # TODO check errors
+      $logger->info("cpanm_install", $perlid, {line => "Installed cpanm"});
+      $logger->debug("cpanm_install", $perlid, {line => "cpanm install output: $output"})
+    });
+
+    $loop->add($func);
+
+    $func;
+  };
+
+
   $logger->info("cpanm_install", $perlid, {line => "Installing cpanm"});
 
-  return await async_func_run($loop, sub{
-    my $perl_bin = $base_path->child($perlid)->child("bin");
-    my ($perl_exe) = $perl_bin->children(qr/^perl5/);
-
-    my $output = capture {
-      system("/bin/sh", "-c", 'curl -L https://cpanmin.us | '.$perl_exe.' - App::cpanminus');
-    };
-    # TODO check errors
-    $logger->info("cpanm_install", $perlid, {line => "Installed cpanm"});
-    $logger->debug("cpanm_install", $perlid, {line => "cpanm install output: $output"})
-  });
+  return $function->call(args => [])->get();
 }
 
 async sub read_cpanfile {
