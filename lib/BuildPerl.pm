@@ -20,17 +20,18 @@ use Logger;
 use InstallModules;
 use Capture::Tiny qw/capture/;
 
-fun build_perl($loop, $perlid, %args) {
-  my ($randid, $baseid, $threads, $basepath, $srcpath) = @args{qw/randid baseid threads basepath srcpath/};
+sub build_perl {
+  my ($loop, $perlid, %args) = @_;
+  my ($threads, $basepath, $srcpath) = @args{qw/threads basepath srcpath/};
 
   state $function = do {
     my $func = IO::Async::Function->new(
       code => sub {
         my ($perlid, $args) = @_;
-        my ($randid, $baseid, $threads, $basepath, $srcpath) = $args->@{qw/randid baseid threads basepath srcpath/};
+        my ($threads, $basepath, $srcpath) = $args->@{qw/threads basepath srcpath/};
       # max an hour
       my $ret_data = Runner::run_code(code => sub {
-        my $dst = $basepath->child($baseid . ($threads ? '-threads' : '') );
+        my $dst = $basepath->child($perlid);
 
         Perl::Build->install(
           src_path => $srcpath,
@@ -50,8 +51,11 @@ fun build_perl($loop, $perlid, %args) {
         );
 
         $dst->child('.tested')->touch();
-      }, logger => sub {$logger->debug("BUILD", $perlid, @_); $logger->perl_build_log($_[0]->{line})}, timeout => 60*60, cgroup => "canary-$perlid", stdin => "");
+      }, logger => sub {$logger->debug("BUILD", $perlid, @_); }, timeout => 60*60, cgroup => "canary-$perlid", stdin => "");
 
+#$logger->perl_build_log($_[0]->{line})
+
+      $logger->perl_build_log($perlid, $ret_data);
       return $ret_data;
     });
 
@@ -60,7 +64,7 @@ fun build_perl($loop, $perlid, %args) {
     $func;
   };
 
-  return $function->call(args => [$perlid, \%args])->get();
+  return $function->call(args => [$perlid, \%args]);
 }
 
 sub clean_git {
@@ -160,7 +164,9 @@ fun build_perls($loop, %args) {
     push @final_futures, $real_fut;
     $logger->debug("prepare", $perlid, {line => "Setting opts ".Dumper($opts)});
 
-    my $next_fut = $seq_fut->followed_by(async sub {
+    my $next_fut = $seq_fut->followed_by(sub {
+        my $previous = shift;
+        print "WAT? ", $previous->state, $previous->failure, "\n";
         try {
           clean_git($loop, $perlid, $srcpath); 
         } catch {
@@ -170,7 +176,10 @@ fun build_perls($loop, %args) {
         my $fut;
         $logger->debug("prebuild", $perlid, {line => "checking skip_build ".$args{skip_build}});
         unless ($args{skip_build}) {
-          $fut = build_perl($loop, baseid => $baseid, randid => $randid, %$opts);
+          print "DE: BUILDPL\n";
+          $fut = build_perl($loop, $perlid, %args, %$opts);
+
+          print "WAT: DB ",$fut->state,"\n";
         } else {
           $fut = Future->done();
         }
