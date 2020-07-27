@@ -50,7 +50,7 @@ fun build_perl($loop, $perlid, %args) {
         );
 
         $dst->child('.tested')->touch();
-      }, logger => sub {$logger->debug("BUILD", $perlid, @_)}, timeout => 60*60, cgroup => "canary-$perlid", stdin => "");
+      }, logger => sub {$logger->debug("BUILD", $perlid, @_); $logger->perl_build_log($_[0]->{line})}, timeout => 60*60, cgroup => "canary-$perlid", stdin => "");
 
       return $ret_data;
     });
