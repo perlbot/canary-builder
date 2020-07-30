@@ -187,7 +187,7 @@ async sub install_modules {
   print "installing modules\n";
   await install_cpanm($loop, $base_path, $perlid);
 
-  # Install a few random modules needed for the rest to be smooth
+  # Force update and install these three modules for later use of cpanm --showdeps to go smoothly, right now we need both calls due to some circular dep stuff I need to fix
 
   await do_install($loop, $perlid, $base_path, [qw/Module::Build ExtUtils::MakeMaker Module::Install/]);
   await install_module($loop, "Module::Build", $perlid, $base_path);
