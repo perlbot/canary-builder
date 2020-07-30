@@ -9,6 +9,7 @@ use Path::Tiny;
 
 use MyMinion;
 use BuildPerlTask;
+use CpanmTasks;
 use Function::Parameters qw/:std/; # TODO remove this
 
 # TODO enqueue jobs

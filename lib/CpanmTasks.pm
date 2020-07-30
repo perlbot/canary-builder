@@ -1,8 +1,16 @@
 package CpanmTasks;
 
+use warnings;
+use strict;
+
 use MyMinion;
 use Runner;
 use List::Util qw/uniq/;
+use Future;
+use IO::Async::Function;
+use IO::Async::Loop;
+use Module::CPANfile;
+use Data::Dumper;
 
 $minion->add_task(install_cpanm => sub {
   my ($job, $perlid, $basepath) = @_;
@@ -37,7 +45,7 @@ $minion->add_task(install_module => sub {
   my $perlbin = $basepath->child($perlid)->child("bin");
   my ($cpanm) = $perlbin->children(qr/^cpanm$/);
 
-  my $results = Runner::run_code(
+  my $result = Runner::run_code(
     code => sub {
       system($cpanm, "--verbose", $module);
       exit($?);
@@ -50,7 +58,7 @@ $minion->add_task(install_module => sub {
   if ($result->{exit_code}) {
     $job->fail("Failed to install module: ".$result->{exit_code}." ".$result->{error});
   } else {
-    $job->finish($results->{buffer});
+    $job->finish($result->{buffer});
   }
 });
 
@@ -111,7 +119,7 @@ sub resolve_dependencies {
         
     
     unless ($result->{exit_code}) {
-      my $deps = [map {s/~.*//r} split(/\n/, $output)];
+      my $deps = [map {s/~.*//r} split(/\n/, $result->{buffer})];
       #$logger->debug("cpanm_resolve_deps", $perlid, {line => "Found deps ($?): ".Dumper($deps)});
       $depcache{$module} = $deps;
       return $deps;
@@ -121,7 +129,7 @@ sub resolve_dependencies {
 
   });
 
-  $loop->add($function);
+  $loop->add($func);
 
   my sub resolve_module {
     my ($module) = @_;
@@ -194,17 +202,17 @@ sub resolve_dependencies {
 
 $minion->add_task(schedule_cpanm => sub {
   my ($job, $perlid, $basepath) = @_;
-  my $build_parents = $job->parents;
-  my $install_id = $minion->enqueue(install_cpanm => [$basepath, $perlid] => {notes => $job->notes, parents => $build_parents});
+  my $build_parents = $job->info->{parents};
+  my $install_id = $minion->enqueue(install_cpanm => [$basepath, $perlid] => {notes => $job->info->{notes}, parents => $build_parents});
 
   my @jobs = map {
-    $minion->enqueue(install_module => [$perlid, $basepath, $_] => {notes => $job->notes, parents => [$install_id]});
+    $minion->enqueue(install_module => [$perlid, $basepath, $_] => {notes => $job->info->{notes}, parents => [$install_id]});
   } qw/Module::Build ExtUtils::MakeMaker Module::Install/;
   # Force update and install these three modules for later use of cpanm --showdeps to go smoothly, right now we need both calls due to some circular dep stuff I need to fix
 
   my $deplist = read_cpanfile($perlid, $basepath, "/home/perlbot/perlbuut/cpanfile");
 
-  resolve_dependencies([$install_ids, @jobs], $perlid, $basepath, $job->notes, $deplist);
+  resolve_dependencies([$install_id, @jobs], $perlid, $basepath, $job->info->{notes}, $deplist);
   # TODO log deplist
 #  my $results = await install_modules($loop, $perl_path, $deplist);
 });

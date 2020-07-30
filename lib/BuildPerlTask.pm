@@ -113,7 +113,7 @@ $minion->add_task(build_perl => sub {
           ($opts->{threads} ? '-Dusethreads' : ()),
         ],
         test => 1,
-        jobs => 4
+        jobs => 2
       );
 
       $dst->child('.tested')->touch();
