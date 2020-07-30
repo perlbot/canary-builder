@@ -16,7 +16,7 @@ $minion->add_task(clean_git => sub {
   my ($job, $srcpath, $perlid) = @_;
   # Wait until we're done with the git repo
   sleep 1 until $minion->lock('git_repo_lock_'.$srcpath, 7200, {limit => 1});
-  sleep 1 until $minion->lock('build_'.$perlid);
+  sleep 1 until $minion->lock('build_'.$perlid, 7200, {limit => 1});
     
   my $git = Git::Wrapper->new({dir => $srcpath});
 
@@ -53,7 +53,7 @@ $minion->add_task(clean_git => sub {
 $minion->add_task(checkout_git => sub {
   my ($job, $srcpath, $perlid, $refid) = @_;
 
-  if ($minion->lock('git_repo_lock_'.$srcpath, 0) || $minion->lock('git_repo_lock_'.$srcpath, 0)) {
+  if ($minion->lock('git_repo_lock_'.$srcpath, 0) || $minion->lock('build_'.$perlid, 0)) {
     my $repolock = $minion->lock('git_repo_lock_'.$srcpath, 0);
     my $buildlock = $minion->lock('build_'.$perlid, 0);
     
@@ -84,7 +84,7 @@ $minion->add_task(checkout_git => sub {
 $minion->add_task(build_perl => sub {
   my ($job, $srcpath, $perlid, $basepath, $opts) = @_;
 
-  if ($minion->lock('git_repo_lock_'.$srcpath, 0) || $minion->lock('git_repo_lock_'.$srcpath, 0)) {
+  if ($minion->lock('git_repo_lock_'.$srcpath, 0) || $minion->lock('build_'.$perlid, 0)) {
     my $repolock = $minion->lock('git_repo_lock_'.$srcpath, 0);
     my $buildlock = $minion->lock('build_'.$perlid, 0);
     
