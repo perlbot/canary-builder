@@ -119,6 +119,8 @@ $minion->add_task(build_perl => sub {
 
       $dst->child('.tested')->touch();
     }, logger => sub {print "$perlid: ".$_[0]->{line}; }, timeout => 60*60, cgroup => "canary-$perlid", stdin => "");
+
+    
   } catch {
     die $@; # rethrow everything
   } finally {

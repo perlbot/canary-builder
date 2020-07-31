@@ -15,8 +15,6 @@ use Function::Parameters qw/:std/; # TODO remove this
 # TODO enqueue jobs
 
 my %args = (
-  time => "2020-07-30",
-  randid => "ZZKFM",
 ); # TODO parse from cli
 
 sub get_perl_id {
@@ -43,10 +41,10 @@ for my $opts ({threads => 0}, {threads => 1}) {
   my $perlid = get_perl_id($time, $branch, $randid, $opts);
   my $basenotes = {$perlid => 1, srcpath => $srcpath, basepath=>$basepath, options => $opts};
 
-  #my $build_id = BuildPerlTask::build_perl($srcpath, $basepath, $perlid, $branch, $opts, $basenotes, $prev_perl);
-  #$prev_perl = $build_id;
+  my $build_id = BuildPerlTask::build_perl($srcpath, $basepath, $perlid, $branch, $opts, $basenotes, $prev_perl);
+  $prev_perl = $build_id;
 
-  $minion->enqueue(schedule_cpanm => [$perlid, $basepath] => {notes => $basenotes, parents => []});
+  $minion->enqueue(schedule_cpanm => [$perlid, $basepath] => {notes => $basenotes, parents => [$build_id]});
   #$minion->enqueue(schedule_cpanm => [$perlid, $basepath] => {notes => $basenotes, parents => []});
 
   # TODO schedule cpanm installs

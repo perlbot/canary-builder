@@ -59,11 +59,11 @@ $minion->add_task(install_module => sub {
     logger => sub {print "$perlid-module-$module: ".$_[0]->{line}; },
   );
 
- # if ($result->{exit_code}) {
- #   $job->fail("Failed to install module: ".Dumper($result));
- # } else {
+  if ($result->{exit_code}) {
+    $job->fail("Failed to install module: ".Dumper($result));
+  } else {
     $job->finish($result->{buffer});
- # }
+  }
 });
 
  sub read_cpanfile {
