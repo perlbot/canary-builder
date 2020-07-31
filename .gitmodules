@@ -1,0 +1,3 @@
+[submodule "extern/Dist-BuildProcess"]
+	path = extern/Dist-BuildProcess
+	url = https://github.com/shadowcat-mst/Dist-BuildProcess/

@@ -121,15 +121,20 @@ sub resolve_dependencies {
       #logger => sub {print "$perlid-depsearch-$module: ".$_[0]->{line}; },
     );
     
-    unless ($result->{exit_code}) {
-      my $deps = [grep {$_ !~ /^!/} map {s/~.*//r} split(/\n/, $result->{buffer})];
-      #$logger->debug("cpanm_resolve_deps", $perlid, {line => "Found deps ($?): ".Dumper($deps)});
-      $depcache{$module} = $deps;
-      return $deps;
-    } else {
-      die "Failed to get deps for $module: ".Dumper($result);
+    # TODO add abort here if we see File::SpecExtUtils::MakeMaker as a dep, and log the original buffer and error strings
+
+
+    my $deps = [grep {$_ !~ /^!/} map {s/~.*//r} split(/\n/, $result->{stdout_buffer})];
+
+    if (grep {/^.+ExtUtils::MakeMaker$/} $deps->@*) {
+      path("/tmp/")->child($module.".log")->spew_utf8(Dumper($deps, $result));
+      die "GOT A FUCKED UP deplist";
     }
 
+
+    #$logger->debug("cpanm_resolve_deps", $perlid, {line => "Found deps ($?): ".Dumper($deps)});
+    $depcache{$module} = $deps;
+    return $deps;
   });
 
   $loop->add($func);
@@ -232,8 +237,8 @@ $minion->add_task(schedule_cpanm => sub {
   $minion->foreground($_) for ($install_id, @jobs);
 
   try {
-    #my $deplist = read_cpanfile($perlid, $basepath, "/home/perlbot/perlbuut/cpanfile");
-    my $deplist = read_cpanfile($perlid, $basepath, "/home/perlbot/workspace/blead-canary/tests/testcpanfile");
+    my $deplist = read_cpanfile($perlid, $basepath, "/home/perlbot/perlbuut/cpanfile");
+    #my $deplist = read_cpanfile($perlid, $basepath, "/home/perlbot/workspace/blead-canary/tests/testcpanfile");
 
     resolve_dependencies([$install_id, @jobs], $perlid, $basepath, $job->info->{notes}, $deplist);
   } catch {

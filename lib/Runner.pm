@@ -22,6 +22,7 @@ sub _get_line {
 sub run_code {
   my ($code, $log_capture_sub, $timeout, $cgroup_name, $stdin) = +{@_}->@{qw/code logger timeout cgroup stdin/};
   my ($log_buffer, $exit_code, $exit_signal) = ("", 0, 0);
+  my ($stdout_buffer, $stderr_buffer) = ("", "");
   my $cgroup_suffix = 'SUFF';
 
   my ($stdout, $stderr);
@@ -64,10 +65,12 @@ sub run_code {
         if (defined $stdout_line) {
           $log_capture_sub->({line => $stdout_line, time => $time, channel => 'stdout'});
           $log_buffer .= $stdout_line;
+          $stdout_buffer .= $stdout_line;
         }
         if (defined $stderr_line) {
           $log_capture_sub->({line => $stderr_line, time => $time, channel => 'stderr'});
           $log_buffer .= $stderr_line;
+          $stderr_buffer .= $stderr_line;
         }
       } while($gotout);
 
@@ -92,7 +95,7 @@ sub run_code {
     $kill_cgroup->();
   }
 
-  return +{exit_code => $exit_code, exit_signal => $exit_signal, buffer => $log_buffer, error => $error, time_elapsed => $end - $start};
+  return +{exit_code => $exit_code, exit_signal => $exit_signal, buffer => $log_buffer, error => $error, stdout_buffer => $stdout_buffer, stderr_buffer => $stderr_buffer, time_elapsed => $end - $start};
 }
 
 1;
