@@ -108,6 +108,8 @@ sub resolve_dependencies {
     my $perlbin = path($basepath)->child($perlid)->child("bin");
     my ($cpanm) = $perlbin->children(qr/^cpanm$/);
 
+    die "Failed to find cpanm for $perlid $basepath with $module" unless $cpanm;
+
     #$logger->debug("cpanm_resolve_deps", $perlid, {line => "Command is [$cpanm --quiet --showdeps $module]"});
     my $result = Runner::run_code(
       code => sub {
@@ -119,14 +121,14 @@ sub resolve_dependencies {
       #logger => sub {print "$perlid-depsearch-$module: ".$_[0]->{line}; },
     );
     
- #   unless ($result->{exit_code}) {
-      my $deps = [grep {$_ !~ /^\s*!\s*/} map {s/~.*//r} split(/\n/, $result->{buffer})];
+    unless ($result->{exit_code}) {
+      my $deps = [grep {$_ !~ /^!/} map {s/~.*//r} split(/\n/, $result->{buffer})];
       #$logger->debug("cpanm_resolve_deps", $perlid, {line => "Found deps ($?): ".Dumper($deps)});
       $depcache{$module} = $deps;
       return $deps;
-  #  } else {
-  #    die "Failed to get deps for $module: ".Dumper($result);
-  #  }
+    } else {
+      die "Failed to get deps for $module: ".Dumper($result);
+    }
 
   });
 
@@ -164,15 +166,14 @@ sub resolve_dependencies {
       return $loop->new_future->wait_all(@parent_futures);       
     })->then(sub {
       # Success path
-      my ($infut) = @_;
-      #print Dumper($infut);
       my @parents;
-      if ($infut) {
-        my @parent_futs = $infut->get();
-        @parents = map {ref $_ ? $_->get() : $_} @parent_futs;
+
+      for my $pfut (@_) {
+        my @parent_futs = $pfut->get();
+        push @parents, map {ref $_ ? $_->get() : $_} @parent_futs;
       }
 
-      print "Got jobs for $module: ".Dumper(\@parents);
+      print "Got jobs for $module: ".Dumper(0+@_, \@parents);
 
       my $job_id = $minion->enqueue(install_module => [$perlid, $basepath, $module] => {notes => $basenotes, parents => [@$parent_ids, @parents]});
 
@@ -228,8 +229,11 @@ $minion->add_task(schedule_cpanm => sub {
   } qw/Module::Build ExtUtils::MakeMaker Module::Install/;
   # Force update and install these three modules for later use of cpanm --showdeps to go smoothly, right now we need both calls due to some circular dep stuff I need to fix
 
+  $minion->foreground($_) for ($install_id, @jobs);
+
   try {
-    my $deplist = read_cpanfile($perlid, $basepath, "/home/perlbot/perlbuut/cpanfile");
+    #my $deplist = read_cpanfile($perlid, $basepath, "/home/perlbot/perlbuut/cpanfile");
+    my $deplist = read_cpanfile($perlid, $basepath, "/home/perlbot/workspace/blead-canary/tests/testcpanfile");
 
     resolve_dependencies([$install_id, @jobs], $perlid, $basepath, $job->info->{notes}, $deplist);
   } catch {

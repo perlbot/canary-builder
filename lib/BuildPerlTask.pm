@@ -39,11 +39,12 @@ $minion->add_task(clean_git => sub {
   Runner::run_code(
     code => sub {
       chdir $srcpath;
-      system("make clean");
+      exec("make clean");
     }, 
     timeout => 240, 
     cgroup => "make-clean-$perlid",
     stdin => "", 
+    logger => sub {print "$perlid: makeclean: ".$_[0]->{line}; },
     #logger => sub {$logger->debug("makeclean", $perlid, @_)}
   );
   
