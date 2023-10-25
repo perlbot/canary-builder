@@ -224,6 +224,22 @@ sub resolve_dependencies {
   return @joblist;
 }
 
+# helper that sets up the notes and stuff
+sub install_module {
+
+}
+
+sub find_install_module_job {
+
+}
+
+$minion->add_task(new_install_module => sub {
+  my ($job, $perlid, $basepath, $module) = @_;
+
+  my $configure_module = $minion->enqueue(configure_module => [$perlid, $basepath, $module] => {notes => $job->info{notes}});
+  my $install_module = $minion->enqueue(install_module_phase2 => [$perlid, $basepath, $module] => {notes => $job->info->{notes}, parents => [$configure_module_id]});
+});
+
 $minion->add_task(schedule_cpanm => sub {
   my ($job, $perlid, $basepath) = @_;
   my $build_parents = $job->info->{parents};
@@ -249,5 +265,7 @@ $minion->add_task(schedule_cpanm => sub {
   # TODO log deplist
 #  my $results = await install_modules($loop, $perl_path, $deplist);
 });
+
+
 
 1;

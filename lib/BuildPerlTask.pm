@@ -120,7 +120,7 @@ $minion->add_task(build_perl => sub {
       $dst->child('.tested')->touch();
     }, logger => sub {print "$perlid: ".$_[0]->{line}; }, timeout => 60*60, cgroup => "canary-$perlid", stdin => "");
 
-    
+
   } catch {
     die $@; # rethrow everything
   } finally {
@@ -131,12 +131,42 @@ $minion->add_task(build_perl => sub {
 
 });
 
+$minion->add_task(record_perl_dashv => sub {
+  my ($job, $perlid, $basepath) = @_;
+
+  my $perlbin = path($basepath)->child($perlid)->child("bin");
+  my ($perlexe) = $perlbin->children(qr/^perl5/);
+
+
+  # TODO check the output of this
+  my $result = Runner::run_code(
+    code => sub {
+      exec($perlexe, '-V');
+    }, 
+    timeout => 240,
+    cgroup => "perl-dashv-$perlid",
+    stdin => "", 
+    logger => sub {print "$perlid-dashv: ".$_[0]->{line}; },
+  );
+
+  # TODO call Logger->... for saving this
+
+  if ($result->{exit_code}) {
+    $job->fail("Failed to -V: ".$result->{exit_code}." ".$result->{error});
+  } else {
+    $job->finish($result->{buffer});
+  }
+
+
+});
+
 sub build_perl {
   my ($srcpath, $basepath, $perlid, $branch, $opts, $basenotes, $real_parent) = @_;
 
   my $cleangit_id = $minion->enqueue(clean_git => [$srcpath, $perlid] => {notes => $basenotes, parents => [$real_parent // ()]});
   my $checkoutgit_id = $minion->enqueue(checkout_git => [$srcpath, $perlid, $branch] => {notes => $basenotes, parents => [$cleangit_id]});
   my $build_id = $minion->enqueue(build_perl => [$srcpath, $perlid, $basepath, $opts] => {notes => $basenotes, parents => [$checkoutgit_id]});
+  $minion->enqueue(record_perl_dashv => [$perlid, $basepath] => {notes => $basenotes, parents => [$build_id]});
 
   return $build_id;
 }
